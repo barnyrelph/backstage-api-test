@@ -1,0 +1,331 @@
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: citizen API
+  description: The Citizen Match API
+  tags:
+    - DWP
+    - rest
+spec:
+  type: openapi
+  lifecycle: experimental
+  owner: team-c
+  definition: |
+  openapi: 3.0.1
+
+info:
+  title: Citizen API (Match)
+  description: |-
+    This endpoint is part of the DWP “Citizen API”, which is an API to allow consumers to retrieve (and in some cases update) data held by DWP about a 
+    citizen.  The citizen is identified by a GUID, which is provided by the `/v2/citizens/match` endpoint.
+
+    The `/v2/citizens/match` endpoint attempts to match a citizen record within DWP, using a combination of attributes such as name, alternate name, last name, postcode, ninoFragment, date of birth, postcode or contact Details .  
+    If successful, a GUID is returned which can be used to identify the citizen in all other endpoints of Citizen API.
+    
+    The matching of a citizen is performed in lieu with the `policy-id` that is passed on the request.
+
+    Note that all date fields in Citizen API have the format **YYYY-MM-DD**.
+
+    There are certain header fields required in each API call as detailed below -
+
+    | Attribute (M/O) | Description |
+    | ---------| ---------- |
+    | `instigating-user-id (M)` | Identifier of the logged in user id (used for auditing if auditing is enabled |
+    | `policy-id (M)`| The policy id against which the matching rules will be applied. |
+    | `correlation-id (M)` | Unique correlation identifier for tracking purpose |
+    | `context (M)` | Source System Identifier as provided to the client at provisioning. |
+
+    **Citizen API will validate that the value of the `insitigating-user-id` field is based on the format specified below:**
+      - must start with an alphabet character (a-zA-Z), lowercase, or uppercase.
+      - Followed by dot (.), underscore (_) and hyphen (-) OR an alphanumeric character OR '@''.
+      - The dot (.), underscore (_), hyphen (-) or '@' must not be the first or last character.
+      - The '@' should not appear consecutively.
+      - The dot (.), underscore (_), or hyphen (-) should not appear consecutively.
+      - Must end with an alphanumeric character(s) (a-zA-Z0-9).
+      - Length should be between 3-40 characters
+    
+    **Citizen API will validate that the value of the `context` field is based on the format specified below:**
+      - must begin with a alphabet followed by alphanumeric characters and hypens
+      - must have a '-' (hypen).
+      - no other special characters allowed except '-' (hypen)
+      - must end with alphanumeric character(s).
+      - multiple spaces not allowed between 2 words.
+
+
+  version: "2.1.0"
+tags:
+  - name: Citizen API
+    description: Citizen Core API Operations keyed by GUID
+servers:
+  - url: https://gateway.integr-production.dwpcloud.uk:8443/capi
+security:
+  - Oauth2: []
+paths:
+  /v2/citizens/match:
+    post:
+      tags:
+        - Citizen API
+      description: POST `v2/citizens/match` returns a GUID if the citizen can be matched in the existing database.  Otherwise
+        a HTTP 404 (Not Found) error is returned
+      operationId: matchMDS
+      parameters:
+        - name: instigating-user-id
+          in: header
+          description: The id of the logged in user. This is required for auditing purposes.The value in this field should match the format specified.
+          required: true
+          schema:
+            type: string
+            maxLength: 40
+            pattern: '^[a-zA-Z]([._-](?![._-])|@(?!@)|[a-zA-Z0-9]){1,38}[a-zA-Z0-9]$'
+        - name: policy-id
+          in: header
+          description: The policy id as given to the consumer. This policy id will be used to match the citizen's record aginst the supplied attributes.
+            This must be specified
+          required: true
+          schema:
+            type: string
+        - name: correlation-id
+          in: header
+          description: Session ID of the user's session.  Can be used for correlation
+            of log entries if required.
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}'
+        - name: context
+          in: header
+          description: Used to specify in which business context (application/process)
+            the call is being made - valid values will have been supplied to caller
+            as part of provisioning access to the APIs.
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z]+[a-zA-Z0-9]*-+(\s?\-?[a-zA-Z0-9]+)+$'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MDSDataJSONAPI'
+        required: true
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                required:
+                  - data
+                type: object
+                properties:
+                  jsonapi:
+                    $ref: '#/components/schemas/VersionObject'
+                  data:
+                    $ref: '#/components/schemas/GUIDJSONData'
+        400:
+          description: Bad Request.  The request is malformed or the body cannot be
+            parsed/understood.  Please check request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetails'
+        401:
+          description: Unauthorized - invalid JWT token supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetails'
+        403:
+          description: Forbidden.  Access to the requested resource is denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetails'
+        404:
+          description: No Resource Found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetails'
+        412:
+          description: Precondition failed.  The client specified some preconditions
+            in the request headers that are not valid / met.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetails'
+        422:
+          description: Unprocessable Entity - The request was well-formed but was unable to be performed
+            due to validation/semantic errors.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetails'
+        429:
+          description: API rate limit exceeded.
+        500:
+          description: Internal server error / failure.  Please retry your request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetails'
+        503:
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetails'
+components:
+  schemas:
+    ErrorDetails:
+      description: a set of error codes and details received when trying to complete the required request.
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/JSONAPIErrorDetails'
+    JSONAPIErrorDetails:
+      description: Error details object complying to the JSON-API specification - see https://jsonapi.org/format/#error-objects
+      type: object
+      properties:
+        id:
+          type: string
+        links:
+          $ref: '#/components/schemas/JSONAPIErrorLinks'
+        status:
+          type: string
+        code:
+          type: string
+        title:
+          type: string
+        detail:
+          type: string
+        source:
+          $ref: '#/components/schemas/Source'
+    JSONAPIErrorLinks:
+      description: "A links object containing the following members: - about: a link that leads to further details about this particular occurrence of the problem."
+      type: object
+      properties:
+        about:
+          type: string
+    Source:
+      description: "an object containing references to the source of the error, optionally including any of the following members:
+                      pointer: a JSON Pointer [RFC6901] to the associated entity in the request document
+                      parameter: a string indicating which URI query parameter caused the error."
+      type: object
+      properties:
+        pointer:
+          type: string
+        parameter:
+          type: string
+    VersionObject:
+      description: Optional - Holds the JSON-API version used (currently only "1.0" is supported )
+      type: object
+      properties:
+        version:
+          type: string
+    MDSDataJSONAPI:
+      type: object
+      properties:
+        jsonapi:
+          $ref: '#/components/schemas/VersionObject'
+        data:
+          $ref: '#/components/schemas/MatchJSONData'
+    MatchJSONData:
+      required:
+        - type
+      type: object
+      properties:
+        type:
+          type: string
+          default: Match
+          example: Match
+        attributes:
+          required:
+            - lastName
+            - dateOfBirth
+          type: object
+          properties:
+            dateOfBirth:
+              description: The date of birth of the Citizen to be matched in 'yyyy-mm-dd' format
+              type: string
+              format: date
+            ninoFragment:
+              description: The last 4 characters of Citizen's National Insurance Number (not including the suffix)
+              type: string
+              maxLength: 4
+              example: 4021
+            firstName:
+              description: The formal given name of the Citizen to be matched.
+              type: string
+              maxLength: 70
+              example: Michael
+            firstNameHistory:
+              description: The historic given name(s) of the Citizen to be matched.
+              type: array
+              example: ['Michale', 'Alfred']
+              items:
+                type: string
+            alternateName:
+              description: The alternate name of the Citizen to be matched.
+              type: string
+              maxLength: 70
+              example: John
+            alternateNameHistory:
+              description: The historic alternate name(s) of the Citizen to be matched.
+              type: array
+              example: ['Johny', 'Alfredo']
+              items:
+                type: string
+            lastName:
+              description: The last of family name of the Citizen to be matched.
+              type: string
+              maxLength: 35
+              example: Clarke
+            lastNameHistory:
+              description: The historic last of family name(s) of the Citizen to be matched.
+              type: array
+              example: ['Pinto']
+              items:
+                type: string
+            postcode:
+              description: The current postcode of the Citizen as known to the department.
+              type: string
+              maxLength: 8
+              example: NE6 1EA
+            postcodeHistory:
+              description: The historic postcode of the Citizen as last known to the department (may not be same as current address if
+                recently moved)
+              type: array
+              example: ['NE1 1SE', 'NE7 7DP']
+              items:
+                type: string
+            contactDetails:
+              description: List of the contact Details of the Citizen to be matched. The contact details can be any phone number (business/home/personal) as known to the department or any email address as known to the department.
+              type: array
+              example: ['07786557896', '03038975678', 'michael.clarke@example.com']
+              items:
+                type: string
+    GUIDJSONData:
+      type: object
+      required:
+        - id
+        - type
+      properties:
+        id :
+          description: The GUID returned for the Citizen.
+          type: string
+          maxLength: 64
+        type:
+          description: JSON-API type value will always be "MatchResult"
+          type: string
+          default: MatchResult
+          example: MatchResult
+
+  securitySchemes:
+    Oauth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://gateway.integr-production.dwpcloud.uk:8443/citizens-information/oauth2/token
+          scopes: {}
